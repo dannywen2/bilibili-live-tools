@@ -38,21 +38,29 @@ def seconds_until_tomorrow():
 
 async def fetch_medal(printer=True):
     if printer:
-        Printer().printer('查询勋章信息',"Info","green")
+        Printer().printer('查询勋章信息', "Info", "green")
         print(
             '{} {} {:^12} {:^10} {} {:^6} '.format(adjust_for_chinese('勋章'), adjust_for_chinese('主播昵称'), '亲密度',
                                                    '今日的亲密度',
                                                    adjust_for_chinese('排名'), '勋章状态'))
     dic_worn = {'1': '正在佩戴', '0': '待机状态'}
-    response = await bilibili().request_fetchmedal()
-    json_response = await response.json(content_type=None)
+    for _ in range(3):
+        response = await bilibili().request_fetchmedal()
+        json_response = await response.json(content_type=None)
+        if json_response['code']:
+            continue
+        # 有时候dict获取不完整，包括最后一项"roomid"的后半部分缺失
+        elif all(["roomid" not in medal for medal in json_response['data']['fansMedalList']]):
+            continue
+        else:
+            break
     roomid = 0
     today_feed = 0
     day_limit = 0
     if json_response['code'] == 0:
         for i in json_response['data']['fansMedalList']:
             if i['status'] == 1:
-                roomid = i['roomid']
+                roomid = i.get('roomid', 0)  # 主站获取的勋章没有直播间
                 today_feed = i['today_feed']
                 day_limit = i['day_limit']
             if printer:
@@ -74,6 +82,9 @@ async def fetch_user_info():
     json_response_ios = await response_ios.json()
     if json_response_ios['code'] == 0:
         gold_ios = json_response_ios['data']['gold']
+    else:
+        # {'code': 3, 'msg': 'user no login', 'message': 'user no login', 'data': []}
+        gold_ios = None
     # print(json_response_ios)
     if (json_response['code'] == 0):
         data = json_response['data']
@@ -154,45 +165,20 @@ async def check_taskinfo():
     # print(json_response)
     if json_response['code'] == 0:
         data = json_response['data']
-        double_watch_info = data['double_watch_info']
         box_info = data['box_info']
         sign_info = data['sign_info']
         live_time_info = data['live_time_info']
-        print('双端观看直播：')
-        if double_watch_info['status'] == 1:
-            print('# 该任务已完成，但未领取奖励')
-        elif double_watch_info['status'] == 2:
-            print('# 该任务已完成，已经领取奖励')
-        else:
-            print('# 该任务未完成')
-            if double_watch_info['web_watch'] == 1:
-                print('## 网页端观看任务已完成')
-            else:
-                print('## 网页端观看任务未完成')
-
-            if double_watch_info['mobile_watch'] == 1:
-                print('## 移动端观看任务已完成')
-            else:
-                print('## 移动端观看任务未完成')
-
-        print('直播在线宝箱：')
-        if box_info['status'] == 1:
-            print('# 该任务已完成')
-        else:
-            print('# 该任务未完成')
-            print('## 一共{}次重置次数，当前为第{}次第{}个礼包(每次3个礼包)'.format(box_info['max_times'], box_info['freeSilverTimes'],
-                                                              box_info['type']))
-
         print('每日签到：')
         if sign_info['status'] == 1:
             print('# 该任务已完成')
         else:
             print('# 该任务未完成')
 
-        if sign_info['signDaysList'] == list(range(1, sign_info['curDay'] + 1)):
-            print('# 当前全勤')
-        else:
-            print('# 出现断签')
+        # sign_info['signDaysList']已永远为空
+        # if sign_info['signDaysList'] == list(range(1, sign_info['curDay'] + 1)):
+        #     print('# 当前全勤')
+        # else:
+        #     print('# 出现断签')
 
         print('直播奖励：')
         if live_time_info['status'] == 1:
@@ -204,14 +190,19 @@ async def check_taskinfo():
 async def send_gift_web(roomid, giftid, giftnum, bagid):
     response = await bilibili().request_check_room(roomid)
     json_response = await response.json()
+    if json_response["code"] != 0:
+        Printer().printer(f"获取送礼房间{roomid}信息出错: {json_response}", "Error", "red")
+        return
     ruid = json_response['data']['uid']
     biz_id = json_response['data']['room_id']
     response1 = await bilibili().request_send_gift_web(giftid, giftnum, bagid, ruid, biz_id)
     json_response1 = await response1.json()
     if json_response1['code'] == 0:
-        Printer().printer(f"送出礼物{json_response1['data']['gift_name']}x{json_response1['data']['gift_num']}","Info","green")
+        Printer().printer(f"送出礼物{json_response1['data']['gift_name']}x{json_response1['data']['gift_num']}到{roomid}房间",
+                          "Info",
+                          "green")
     else:
-        Printer().printer(f"错误:{json_response1['msg']}","Error","red")
+        Printer().printer(f"错误:{json_response1['msg']}", "Error", "red")
 
 
 async def check_room_true(roomid):
@@ -257,3 +248,60 @@ async def reconnect(area=None):
 async def check_area_list(area_list, **kwargs):
     for area_id in area_list:
         await connect().check_area(area_id, **kwargs)
+
+
+async def fetch_gray_medals():
+    gray_medals = []
+    response = await bilibili().request_fetchmedal()
+    json_response = await response.json(content_type=None)
+    for i in range(0, len(json_response['data']['fansMedalList'])):
+        if json_response['data']['fansMedalList'][i]['is_lighted'] == 0:
+            gray_medal = {}
+            gray_medal['medal_name'] = json_response['data']['fansMedalList'][i]['medal_name']
+            gray_medal['roomid'] = json_response['data']['fansMedalList'][i]['roomid']
+            gray_medals.append(gray_medal)
+    return gray_medals
+
+
+async def get_all_of_my_hearts():
+    hearts = []
+    response = await bilibili().request_fetch_bag_list()
+    json_response = await response.json(content_type=None)
+    for i in range(len(json_response['data']['list'])):
+        gift_name = json_response['data']['list'][i]['gift_name']
+        gift_id = (json_response['data']['list'][i]['gift_id'])
+        if gift_name == "小心心" or gift_id == 30607:
+            expireat = json_response['data']['list'][i]['expire_at']
+            bag_id = json_response['data']['list'][i]['bag_id']
+            gift_num = json_response['data']['list'][i]['gift_num']
+            for _ in range(gift_num):
+                hearts.append([bag_id, 1, expireat])
+
+    return hearts
+
+
+async def refresh_all_gray_medals():
+    gray_medals = await fetch_gray_medals()
+    hearts = await get_all_of_my_hearts()
+    if hearts:
+        for gray_medal in gray_medals:
+            if len(hearts) > 0:
+                heart = hearts.pop()
+                await send_gift_web(gray_medal['roomid'], 30607, 1, heart[0])
+            else:
+                pass
+    else:
+        pass
+
+
+async def refresh_medals_by_roomids(roomids):
+    hearts = await get_all_of_my_hearts()
+    if hearts:
+        for roomid in roomids:
+            if len(hearts) > 0:
+                heart = hearts.pop()
+                await send_gift_web(roomid, 30607, 1, heart[0])
+            else:
+                pass
+    else:
+        pass

@@ -1,23 +1,22 @@
 import utils
 from statistics import Statistics
+from printer import Printer
+import traceback
 import threading
 import asyncio
 
 
 def guide_of_console():
-    print('___________________________')
-    print('| 欢迎使用本控制台           |')
-    print('|1 输出本次的参与抽奖统计     |')
-    print('|2 输出本次的抽奖结果统计     |')
-    print('|3 查看目前拥有礼物的统计     |')
-    print('|4 查看持有勋章状态          |')
-    print('|5 获取直播个人的基本信息     |')
-    print('|6 检查今日任务的完成情况     |')
-    print('|7 检查监控房间的开播情况     |')
-    print('￣￣￣￣￣￣￣￣￣￣￣￣￣￣￣￣')
-
-
-
+    print(' ＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿ ')
+    print('|　欢迎使用本控制台　　　　　　|')
+    print('|１输出本次的参与抽奖统计　　　|')
+    print('|２输出本次的抽奖结果统计　　　|')
+    print('|３查看目前拥有礼物的统计　　　|')
+    print('|４查看持有勋章状态　　　　　　|')
+    print('|５获取直播个人的基本信息　　　|')
+    print('|６检查今日任务的完成情况　　　|')
+    print('|７检查监控房间的开播情况　　　|')
+    print(' ￣￣￣￣￣￣￣￣￣￣￣￣￣￣￣ ')
 
 
 options = {
@@ -78,7 +77,10 @@ class Biliconsole():
                     task = asyncio.ensure_future(i())
                 tasklist.append(task)
             if tasklist:
-                await asyncio.wait(tasklist, return_when=asyncio.ALL_COMPLETED)
+                try:
+                    await asyncio.wait(tasklist, return_when=asyncio.ALL_COMPLETED)
+                except Exception:
+                    Printer().printer(traceback.format_exc(), "Error", "red")
                 # print('本批次结束')
             else:
                 # print('本批次轮空')
